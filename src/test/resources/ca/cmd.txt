@@ -1,0 +1,36 @@
+rm -f server.jks server.csr
+
+# Using keytool to create certificate chain
+keytool -genkeypair -alias ca     -keystore ca.jks -storepass changeit -keypass changeit -dname "CN=CA, OU=Service, O=CA Inc., L=Arakawa, ST=Tokyo, C=JP" -ext bc=ca:true
+keytool -genkeypair -alias server -keystore ca.jks -storepass changeit -keypass changeit -dname "CN=mbp-15uac-268, OU=Web Service, O=Company Inc., L=Arakawa, ST=Tokyo, C=JP"
+keytool -keystore ca.jks -storepass changeit -list
+
+keytool -certreq -alias server -keystore ca.jks -storepass changeit -file server.csr
+keytool -gencert -alias ca     -keystore ca.jks -storepass changeit -infile server.csr -outfile server.cer
+keytool -printcert -file server.cer
+
+keytool -importcert -alias server -keystore ca.jks -storepass changeit -file server.cer
+keytool -list -v -keystore ca.jks -storepass changeit
+
+#openssl verify /etc/ssl/certs/ca-certificates.crt
+#keytool -export -alias ca  -keystore ca.jks -storepass changeit -file ca.cer
+#keytool -import -alias server -keystore server.jks -storepass changeit -noprompt -trustcacerts -file server.crt
+
+// Converting a Java Keystore into PEM Format
+keytool -genkeypair -alias server -keystore server.jks -storepass changeit -keypass changeit -dname "CN=localhost, OU=Web Service, O=Company Inc., L=Arakawa, ST=Tokyo, C=JP" -validity 366 -keyalg RSA -sigalg SHA1withRSA -keysize 2048 -ext bc=ca:true
+keytool -importkeystore -srckeystore server.jks -storepass changeit -keypass changeit -srcstoretype jks -deststoretype pkcs12 -destkeystore server.p12
+openssl pkcs12 -in server.p12 -out server.pem
+openssl x509 -text -in server.pem
+
+curl -v --cacert src/test/resources/ca/cacert.pem http://localhost:8443/hello/Hoge
+export CURL_CA_BUNDLE=/usr/local/share/curl/cacert.pem
+
+mvn exec:java -Dexec.mainClass="net.tiny.boot.Main" -Dexec.args="-v -p batch" -Dexec.classpathScope=runtime
+curl --remote-name --time-cond cacert.pem https://curl.haxx.se/ca/cacert.pem
+curl -u paas:password http://localhost:8080/sys/stop
+# curl -v --cacert src/test/resources/ca/cacert.pem https://localhost:8443/hello/hoge
+curl -v --cacert server.pem https://localhost:8443/hello/hoge
+curl --insecure https://localhost:8443/hello/hoge
+
+openssl s_client -connect localhost:8443 < /dev/null 2> /dev/null | openssl x509 -text
+openssl s_client -connect concourse.corp.yahoo.co.jp:443 < /dev/null 2> /dev/null | openssl x509 -text
