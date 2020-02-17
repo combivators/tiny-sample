@@ -4,6 +4,7 @@ logging:
     level: FINE
   level:
     all: ALL
+    jdk:           WARNING
     java:          WARNING
     javax.xml:     WARNING
     com.sun:       WARNING
@@ -15,45 +16,51 @@ logging:
     org.eclipse:   WARNING
     net.tiny:      INFO
 #
-main: ${launcher.http}, ${launcher.https}, ${launcher.one8081}, ${launcher.two8082}
+main:
+  - ${launcher.http}
+  - ${launcher.https}
+  - ${launcher.one8081}
+  - ${launcher.two8082}
 #shutdown = ${hook}
 daemon: true
 executor: ${pool}
 callback: ${service.context}
 pool:
   class:   net.tiny.service.PausableThreadPoolExecutor
-  size:    20
-  max:     50
+  size:    10
+  max:     30
   timeout: 3
 #
 launcher:
-  batch:
-    class: net.tiny.batch.Launcher
   http:
     class: net.tiny.ws.Launcher
     builder:
       port: 8080
+#     bind: 192.168.1.1
       backlog: 5
       stopTimeout: 1
       executor: ${pool}
-      handlers: ${handler.sys}, ${handler.home}
+      handlers:
+        - ${handler.sys}
+        - ${handler.home}
   https:
     class: net.tiny.ws.Launcher
     builder:
       port: 8443
-      backlog: 3
+      backlog: 5
       stopTimeout: 1
       executor: ${pool}
-      handlers: ${handler.hello}
+      handlers:
+        - ${handler.health}
       ssl:
-        file:       src/test/resources/config/server.jks
+        file:       src/test/resources/ssl/server.jks
         password:   changeit
         clientAuth: false
   one8081:
     class: net.tiny.ws.Launcher
     builder:
       port: 8081
-      backlog: 10
+      backlog: 5
       stopTimeout: 1
       executor: ${pool}
       handlers: ${handler.virtual}
@@ -61,7 +68,7 @@ launcher:
     class: net.tiny.ws.Launcher
     builder:
       port: 8082
-      backlog: 10
+      backlog: 5
       stopTimeout: 1
       executor: ${pool}
       handlers: ${handler.virtual}
@@ -70,30 +77,58 @@ handler:
     class:   net.tiny.ws.ControllableHandler
     path:    /sys
     auth:    ${auth.simple}
+    filters:
+      - ${filter.logger}
+      - ${filter.snap}
+# https://localhost:8443/health
+  health:
+    class:   net.tiny.ws.VoidHttpHandler
+    
+    path:    /health
     filters: ${filter.logger}
-  hello:
-    class:   net.tiny.sample.HelloHandler
-    path:    /hello
-    filters: ${filter.logger}
+# http://localhost:8080/home/index.html
   home:
-    class:     net.tiny.ws.ResourceHttpHandler
-    cacheSize: 100
-#    maxAge:    0
+    class:    net.tiny.ws.ResourceHttpHandler
+    verbose:  true
+    cacheSize: 10
+#    maxAge:   0
     internal:  false
-    path:      /
-    paths:     /:/opt/demo/home/
-    filters:   ${filter.logger}, ${filter.cors}
+    path:      /home
+    paths:     home:src/main/resources/home
+    filters:
+      - ${filter.logger}
+      - ${filter.cors}
+      - ${filter.snap}
   virtual:
     class:     net.tiny.ws.VirtualHostHandler
+    verbose:   true
     cacheSize: 100
     path:      /
-    virtual:   |
-      one.localhost=src/main/resources/virtual/one
-      two.localhost:8082=src/main/resources/virtual/two
-      three.localhost:8081=src/main/resources/virtual/three-8081
-      three.localhost:8082=src/main/resources/virtual/three-8082
     filters:   ${filter.virtual}
+    hosts:
+      - ${host.virtual.one}
+      - ${host.virtual.two}
+      - ${host.virtual.three1}
+      - ${host.virtual.three2}
 #
+host:
+  virtual:
+    one:
+      domain: one.localdomain
+      home:   src/main/resources/virtual/one
+      log:    .access.log
+    two:
+      domain: two.localdomain
+      home:   src/main/resources/virtual/two
+      log:    .access.log
+    three1:
+      domain: three.localdomain:8081
+      home:   src/main/resources/virtual/three-8081
+      log:    stdout
+    three2:
+      domain: three.localdomain:8082
+      home:   src/main/resources/virtual/three-8082
+      log:    stderr
 #
 filter:
    logger:
@@ -101,7 +136,15 @@ filter:
      out:   stdout
    virtual:
      class: net.tiny.ws.VirtualLogger
-     out:   stdout
+     hosts:
+       - ${host.virtual.one}
+       - ${host.virtual.two}
+       - ${host.virtual.three1}
+       - ${host.virtual.three2}
+   cors:
+     class: net.tiny.ws.CorsResponseFilter
+   snap:
+     class: net.tiny.ws.SnapFilter
 #
 auth:
   simple:
